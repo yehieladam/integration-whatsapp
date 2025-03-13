@@ -48,12 +48,10 @@ app.post('/webhook', async (req, res) => {
         console.log(`🔄 Sending button interaction to Voiceflow: ${button_text}`);
 
         await interact(user_id, {
-          type: 'intent',
-          payload: {
-            query: button_text,
-            intent: { name: button_id },
-            entities: [],
-          },
+          type: button_id.startsWith("path-") ? "path" : "intent",
+          payload: button_id.startsWith("path-") 
+            ? { path: button_id.replace("path-", "") } 
+            : { query: button_text, intent: { name: button_id }, entities: [] },
         }, phone_number_id, user_name);
       }
     }
