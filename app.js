@@ -13,7 +13,7 @@ const express = require('express'),
   axios = require('axios').default,
   app = express().use(body_parser.json())
 
-app.listen(process.env.PORT || 3000, () => console.log('webhook is listening'))
+app.listen(process.env.PORT || 3000, () => console.log('✅ Webhook is listening'))
 
 app.get('/', (req, res) => {
   res.json({
@@ -48,12 +48,10 @@ app.post('/webhook', async (req, res) => {
         console.log(`🔄 Sending button interaction to Voiceflow: ${button_text}`);
 
         await interact(user_id, {
-          type: 'intent',
-          payload: {
-            query: button_text,
-            intent: { name: button_id },
-            entities: [],
-          },
+          type: button_id.startsWith("path-") ? "path" : "intent",
+          payload: button_id.startsWith("path-") 
+            ? { path: button_id.replace("path-", "") } 
+            : { query: button_text, intent: { name: button_id }, entities: [] },
         }, phone_number_id, user_name);
       }
     }
@@ -70,7 +68,7 @@ app.get('/webhook', (req, res) => {
 
   if (mode && token) {
     if ((mode === 'subscribe' && token === process.env.VERIFY_TOKEN) || 'voiceflow') {
-      console.log('WEBHOOK_VERIFIED')
+      console.log('✅ WEBHOOK_VERIFIED')
       res.status(200).send(challenge)
     } else {
       res.sendStatus(403)
@@ -125,5 +123,27 @@ async function interact(user_id, request, phone_number_id, user_name) {
     await sendMessage(response.data, phone_number_id, user_id);
   } catch (error) {
     console.error("❌ Error in interact function:", error);
+  }
+}
+
+async function sendMessage(messages, phone_number_id, from) {
+  for (let message of messages) {
+    let data = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: from,
+      type: 'text',
+      text: {
+        preview_url: true,
+        body: message.payload?.message || 'הודעה ריקה',
+      },
+    }
+    try {
+      await axios.post(`https://graph.facebook.com/${WHATSAPP_VERSION}/${phone_number_id}/messages`, data, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      });
+    } catch (error) {
+      console.error("❌ Error sending message:", error.response?.data || error.message);
+    }
   }
 }
