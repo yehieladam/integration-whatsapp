@@ -97,43 +97,52 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// פונקציה לתקשורת עם Voiceflow
-async function interact(userId, request, phoneNumberId, userName) {
-  try {
-    console.log(`🔄 Sending interaction to Voiceflow for ${userName} (${userId})`, request);
-    const response = await axios.post(
-      `https://general-runtime.voiceflow.com/state/user/${encodeURIComponent(userId)}/interact`,
-      { action: request },
-      { headers: { Authorization: VF_API_KEY, 'Content-Type': 'application/json', versionID: VF_VERSION_ID, projectID: VF_PROJECT_ID } }
-    );
-    console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
-    return response.data;
-  } catch (error) {
-    console.error('❌ Error in interact function:', error.response?.data || error.message);
-    return null;
-  }
-}
-
-// פונקציה לשליחת הודעה ל-WhatsApp
+// פונקציה לשליחת הודעה ל-WhatsApp כולל כפתורים
 async function sendMessage(messages, phoneNumberId, userId) {
   for (let message of messages) {
     console.log("📤 Sending message to WhatsApp:", message);
-    let textMessage = message.payload?.message || '🤖 אין תגובה מהבוט';
-    const data = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: userId,
-      type: 'text',
-      text: { preview_url: true, body: textMessage }
-    };
-    try {
-      await axios.post(
-        `https://graph.facebook.com/${WHATSAPP_VERSION}/${phoneNumberId}/messages`,
-        data,
-        { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-      );
-    } catch (error) {
-      console.error('❌ Error sending message:', error.response?.data || error.message);
+    let data;
+    
+    if (message.type === 'text') {
+      data = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: userId,
+        type: 'text',
+        text: { preview_url: true, body: message.payload.message || '🤖 אין תגובה מהבוט' }
+      };
+    } else if (message.type === 'buttons' && message.payload?.buttons) {
+      data = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: userId,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: message.payload.message || 'בחר אופציה:' },
+          action: {
+            buttons: message.payload.buttons.map((btn, index) => ({
+              type: 'reply',
+              reply: {
+                id: btn.id || `button_${index}`,
+                title: btn.label || btn.title || `אפשרות ${index + 1}`
+              }
+            }))
+          }
+        }
+      };
+    }
+    
+    if (data) {
+      try {
+        await axios.post(
+          `https://graph.facebook.com/${WHATSAPP_VERSION}/${phoneNumberId}/messages`,
+          data,
+          { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+        );
+      } catch (error) {
+        console.error('❌ Error sending message:', error.response?.data || error.message);
+      }
     }
   }
 }
