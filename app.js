@@ -91,3 +91,18 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+// פונקציה לתקשורת עם Voiceflow
+async function interact(userId, request, phoneNumberId, userName) {
+  try {
+    console.log(`🔄 Sending interaction to Voiceflow for ${userName} (${userId})`, request);
+    const response = await axios.post(
+      `https://general-runtime.voiceflow.com/state/user/${encodeURIComponent(userId)}/interact`,
+      { request: request },
+      { headers: { Authorization: VF_API_KEY, 'Content-Type': 'application/json', versionID: VF_VERSION_ID, projectID: VF_PROJECT_ID } }
+    );
+    console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
+  } catch (error) {
+    console.error('❌ Error in interact function:', error.response?.data || error.message);
+  }
+}
