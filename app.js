@@ -49,17 +49,15 @@ app.post('/webhook', async (req, res) => {
         console.log("📌 Interactive Message Received:", interactive);
         
         let buttonPayload;
-        let buttonAction = "button";
         
         if (interactive.type === 'button_reply') {
-          buttonPayload = interactive.button_reply.title; // שינוי: השתמש בטקסט של הכפתור במקום ב-ID
+          buttonPayload = interactive.button_reply.title;
         } else if (interactive.type === 'list_reply') {
-          buttonPayload = interactive.list_reply.title; // שינוי: השתמש בטקסט של הכפתור במקום ב-ID
+          buttonPayload = interactive.list_reply.title;
         }
         
         if (buttonPayload) {
           console.log("📌 Button Clicked:", buttonPayload);
-          // שליחת לחיצת הכפתור כהודעת טקסט רגילה לפי המלצת Voiceflow
           await interact(user_id, {
             type: 'text',
             payload: buttonPayload,
@@ -133,9 +131,78 @@ async function interact(user_id, request, phone_number_id, user_name) {
       return;
     }
 
-    await sendMessage(response.data, phone_number_id, user_id);
+    // תהליך שליחת הודעות חדש שמטפל ברקורסיביות ב"קפיצות" בפלו
+    await processAndSendMessages(response.data, phone_number_id, user_id);
   } catch (error) {
     console.error("❌ Error in interact function:", error);
+  }
+}
+
+// פונקציה חדשה לטיפול בתגובות מVoiceflow כולל קפיצות בפלו
+async function processAndSendMessages(messages, phone_number_id, user_id) {
+  try {
+    const messagesToSend = [];
+    const pathsToFollow = [];
+    
+    // הפרדה בין הודעות רגילות לפקודות מסוג "path"
+    for (const message of messages) {
+      if (message.type === 'path') {
+        pathsToFollow.push(message);
+      } else {
+        messagesToSend.push(message);
+      }
+    }
+    
+    // שליחת הודעות רגילות
+    if (messagesToSend.length > 0) {
+      await sendMessage(messagesToSend, phone_number_id, user_id);
+    }
+    
+    // טיפול בפקודות מסוג "path" - המשך הפלו
+    for (const pathMessage of pathsToFollow) {
+      if (pathMessage.payload?.path === 'jump') {
+        console.log("🔄 Following path 'jump' in the flow");
+        await followPath(user_id, pathMessage.payload.path, phone_number_id);
+      } else if (pathMessage.payload?.path) {
+        console.log(`🔄 Following path '${pathMessage.payload.path}' in the flow`);
+        await followPath(user_id, pathMessage.payload.path, phone_number_id);
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error in processAndSendMessages:", error);
+  }
+}
+
+// פונקציה חדשה למעקב אחרי קפיצות בפלו
+async function followPath(user_id, path, phone_number_id) {
+  try {
+    // שליחת בקשה לצעד הנוכחי בפלו
+    const response = await axios({
+      method: 'POST',
+      url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(user_id)}/interact`,
+      headers: {
+        Authorization: VF_API_KEY,
+        'Content-Type': 'application/json',
+        versionID: VF_VERSION_ID,
+      },
+      data: {
+        action: {
+          type: 'path',
+          payload: {
+            path: path
+          }
+        }
+      },
+    });
+    
+    console.log(`📌 Response from Voiceflow after following path '${path}':`, JSON.stringify(response.data, null, 2));
+    
+    if (response.data && response.data.length > 0) {
+      // קריאה רקורסיבית לטיפול בהודעות הבאות
+      await processAndSendMessages(response.data, phone_number_id, user_id);
+    }
+  } catch (error) {
+    console.error(`❌ Error following path '${path}':`, error);
   }
 }
 
@@ -195,10 +262,8 @@ async function sendMessage(messages, phone_number_id, from) {
             },
             action: {
               buttons: messages[j].payload.buttons.map((button, index) => {
-                // שינוי: שימוש בתכונת ה-payload.label או text של הכפתור
                 let buttonTitle = "";
                 
-                // ניסיון להשיג את הטקסט של הכפתור מכל מקום אפשרי
                 if (button.request?.payload?.label) {
                   buttonTitle = button.request.payload.label;
                 } else if (button.name) {
@@ -222,8 +287,9 @@ async function sendMessage(messages, phone_number_id, from) {
         };
       } else {
         ignore = true;
-        console.error("❌ Unsupported message type or missing payload:", messages[j]);
+        console.log(`ℹ️ Ignoring unsupported message type: ${messages[j].type}`);
       }
+      
       if (!ignore) {
         console.log("📩 Sending WhatsApp message to:", from);
         console.log("📩 Message Data:", JSON.stringify(data, null, 2));
