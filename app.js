@@ -43,22 +43,25 @@ app.post('/webhook', async (req, res) => {
           payload: req.body.entry[0].changes[0].value.messages[0].text.body,
         }, phone_number_id, user_name)
       } 
-      // טיפול בלחיצות על כפתורים - זה החלק החסר
+      // טיפול בלחיצות על כפתורים
       else if (req.body.entry[0].changes[0].value.messages[0].interactive) {
         const interactive = req.body.entry[0].changes[0].value.messages[0].interactive;
         console.log("📌 Interactive Message Received:", interactive);
         
         let buttonPayload;
+        let buttonAction = "button";
+        
         if (interactive.type === 'button_reply') {
-          buttonPayload = interactive.button_reply.id;
+          buttonPayload = interactive.button_reply.title; // שינוי: השתמש בטקסט של הכפתור במקום ב-ID
         } else if (interactive.type === 'list_reply') {
-          buttonPayload = interactive.list_reply.id;
+          buttonPayload = interactive.list_reply.title; // שינוי: השתמש בטקסט של הכפתור במקום ב-ID
         }
         
         if (buttonPayload) {
           console.log("📌 Button Clicked:", buttonPayload);
+          // שליחת לחיצת הכפתור כהודעת טקסט רגילה לפי המלצת Voiceflow
           await interact(user_id, {
-            type: 'button',
+            type: 'text',
             payload: buttonPayload,
           }, phone_number_id, user_name);
         }
@@ -154,7 +157,7 @@ async function sendMessage(messages, phone_number_id, from) {
           },
         };
       } 
-      // טיפול בהודעות מסוג buttons - החלק הזה היה ריק
+      // טיפול בהודעות מסוג buttons
       else if (messages[j].type === 'buttons' && messages[j].payload?.buttons) {
         data = {
           messaging_product: 'whatsapp',
@@ -170,7 +173,7 @@ async function sendMessage(messages, phone_number_id, from) {
               buttons: messages[j].payload.buttons.map((button, index) => ({
                 type: 'reply',
                 reply: {
-                  id: button.id || `button_${index}`,
+                  id: button.name || button.title || `button_${index}`,
                   title: button.name || button.title || "אפשרות",
                 }
               }))
@@ -178,7 +181,7 @@ async function sendMessage(messages, phone_number_id, from) {
           }
         };
       } 
-      // תיקון הטיפול בהודעות מסוג choice - הסרת כפילויות והוספת id ייחודי
+      // טיפול בהודעות מסוג choice
       else if (messages[j].type === 'choice' && messages[j].payload?.buttons) {
         data = {
           messaging_product: 'whatsapp',
@@ -192,13 +195,25 @@ async function sendMessage(messages, phone_number_id, from) {
             },
             action: {
               buttons: messages[j].payload.buttons.map((button, index) => {
-                // שימוש ב-id ייחודי לכל כפתור
-                const buttonId = button.request?.payload?.label || button.title || `choice_${index}`;
+                // שינוי: שימוש בתכונת ה-payload.label או text של הכפתור
+                let buttonTitle = "";
+                
+                // ניסיון להשיג את הטקסט של הכפתור מכל מקום אפשרי
+                if (button.request?.payload?.label) {
+                  buttonTitle = button.request.payload.label;
+                } else if (button.name) {
+                  buttonTitle = button.name;
+                } else if (button.title) {
+                  buttonTitle = button.title;
+                } else {
+                  buttonTitle = `אפשרות ${index + 1}`;
+                }
+                
                 return {
                   type: 'reply',
                   reply: {
-                    id: buttonId,
-                    title: button.request?.payload?.label || button.title || "אפשרות",
+                    id: buttonTitle,
+                    title: buttonTitle,
                   }
                 };
               })
