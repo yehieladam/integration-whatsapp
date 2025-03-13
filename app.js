@@ -82,8 +82,10 @@ app.post('/webhook', async (req, res) => {
     if (request) {
       console.log("🔄 Sending request to Voiceflow:", request);
       const response = await interact(userId, request, phoneNumberId, userName);
-      if (response) {
+      if (response && response.length > 0) {
         await sendMessage(response, phoneNumberId, userId);
+      } else {
+        console.log("⚠️ Voiceflow returned an empty response");
       }
     } else {
       console.log("⚠️ No valid request generated from message");
@@ -101,7 +103,7 @@ async function interact(userId, request, phoneNumberId, userName) {
     console.log(`🔄 Sending interaction to Voiceflow for ${userName} (${userId})`, request);
     const response = await axios.post(
       `https://general-runtime.voiceflow.com/state/user/${encodeURIComponent(userId)}/interact`,
-      { request: request },
+      { action: request },
       { headers: { Authorization: VF_API_KEY, 'Content-Type': 'application/json', versionID: VF_VERSION_ID, projectID: VF_PROJECT_ID } }
     );
     console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
@@ -116,7 +118,7 @@ async function interact(userId, request, phoneNumberId, userName) {
 async function sendMessage(messages, phoneNumberId, userId) {
   for (let message of messages) {
     console.log("📤 Sending message to WhatsApp:", message);
-    let textMessage = message.payload?.message || '⚠️ הודעה ריקה מהבוט';
+    let textMessage = message.payload?.message || '🤖 אין תגובה מהבוט';
     const data = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
