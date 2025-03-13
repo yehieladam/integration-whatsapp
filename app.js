@@ -66,7 +66,7 @@ app.get('/webhook', (req, res) => {
 
 async function interact(user_id, request, phone_number_id, user_name) {
   console.log("🔄 Sending interaction to Voiceflow", user_name, user_id)
-  await axios({
+  let response = await axios({
     method: 'POST',
     url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(user_id)}/interact`,
     headers: {
@@ -78,4 +78,5 @@ async function interact(user_id, request, phone_number_id, user_name) {
       action: request,
     },
   })
+  console.log("📌 Response from Voiceflow:", response.data);
 }
