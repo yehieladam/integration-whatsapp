@@ -1,149 +1,114 @@
 'use strict'
 require('dotenv').config()
-const WHATSAPP_VERSION = process.env.WHATSAPP_VERSION || 'v17.0'
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
 
-const VF_API_KEY = process.env.VF_API_KEY
-const VF_VERSION_ID = process.env.VF_VERSION_ID || 'development'
-const VF_PROJECT_ID = process.env.VF_PROJECT_ID || null
+// הגדרות משתנים מהסביבה
+const WHATSAPP_VERSION = process.env.WHATSAPP_VERSION || 'v17.0';
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const VF_API_KEY = process.env.VF_API_KEY;
+const VF_VERSION_ID = process.env.VF_VERSION_ID || 'development';
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'voiceflow';
 
-const fs = require('fs')
-const express = require('express'),
-  body_parser = require('body-parser'),
-  axios = require('axios').default,
-  app = express().use(body_parser.json())
+const app = express();
+app.use(bodyParser.json());
 
-app.listen(process.env.PORT || 3000, () => console.log('✅ Webhook is listening'))
+// האזנה לשרת
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Webhook is listening on port ${PORT}`));
 
+// בדיקת סטטוס
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    info: 'WhatsApp API v1.1.2 | V⦿iceflow | 2023',
-    status: 'healthy',
-    error: null,
-  })
-})
+    info: 'WhatsApp API | Voiceflow Integration',
+    status: 'healthy'
+  });
+});
 
-app.post('/webhook', async (req, res) => {
-  let body = req.body
-  if (req.body.object) {
-    const isNotInteractive = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.length || null
-    if (isNotInteractive) {
-      let phone_number_id = req.body.entry[0].changes[0].value.metadata.phone_number_id
-      let user_id = req.body.entry[0].changes[0].value.messages[0].from 
-      let user_name = req.body.entry[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || 'Unknown'
-      
-      console.log("📌 User ID (Phone Number):", user_id);
-      console.log("📌 User Name:", user_name);
-      
-      if (req.body.entry[0].changes[0].value.messages[0].text) {
-        await interact(user_id, {
-          type: 'text',
-          payload: req.body.entry[0].changes[0].value.messages[0].text.body,
-        }, phone_number_id, user_name)
-      } else if (req.body.entry[0].changes[0].value.messages[0].interactive) {
-        let button_id = req.body.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
-        let button_text = req.body.entry[0].changes[0].value.messages[0].interactive.button_reply.title;
-
-        console.log(`🔄 Sending button interaction to Voiceflow: ${button_text}`);
-
-        await interact(user_id, {
-          type: button_id.startsWith("path-") ? "path" : "intent",
-          payload: button_id.startsWith("path-") 
-            ? { path: button_id.replace("path-", "") } 
-            : { query: button_text, intent: { name: button_id }, entities: [] },
-        }, phone_number_id, user_name);
-      }
-    }
-    res.status(200).json({ message: 'ok' })
-  } else {
-    res.status(400).json({ message: 'error | unexpected body' })
-  }
-})
-
+// אימות הווב-הוק של ווטסאפ
 app.get('/webhook', (req, res) => {
-  let mode = req.query['hub.mode']
-  let token = req.query['hub.verify_token']
-  let challenge = req.query['hub.challenge']
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
-  if (mode && token) {
-    if ((mode === 'subscribe' && token === process.env.VERIFY_TOKEN) || 'voiceflow') {
-      console.log('✅ WEBHOOK_VERIFIED')
-      res.status(200).send(challenge)
-    } else {
-      res.sendStatus(403)
-    }
+  if (mode && token === VERIFY_TOKEN) {
+    console.log('✅ WEBHOOK_VERIFIED');
+    return res.status(200).send(challenge);
   }
-})
+  res.sendStatus(403);
+});
 
-async function interact(user_id, request, phone_number_id, user_name) {
+// טיפול בהודעות נכנסות מווטסאפ
+app.post('/webhook', async (req, res) => {
+  const body = req.body;
+  if (!body.object) return res.status(400).json({ message: 'error | unexpected body' });
+  
   try {
-    console.log("🔄 Sending interaction to Voiceflow", user_name, user_id)
+    const entry = body.entry?.[0]?.changes?.[0]?.value;
+    if (!entry || !entry.messages) return res.status(200).send('No messages');
+
+    const phoneNumberId = entry.metadata.phone_number_id;
+    const userId = entry.messages[0].from;
+    const userName = entry.contacts?.[0]?.profile?.name || 'Unknown';
+    const messageType = entry.messages[0].type;
     
-    if (request.payload?.toLowerCase() === "סיים שיחה") {
-      console.log("🔄 Resetting session for", user_id);
-      await axios({
-        method: 'PATCH',
-        url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(user_id)}/variables`,
-        headers: {
-          Authorization: VF_API_KEY,
-          'Content-Type': 'application/json',
-        },
-        data: {
-          user_id: user_id,
-          restart: true,
-          sessionID: `${user_id}-${Date.now()}`
-        },
-      });
+    let request;
+    if (messageType === 'text') {
+      request = { type: 'text', payload: entry.messages[0].text.body };
+    } else if (messageType === 'interactive') {
+      const buttonId = entry.messages[0].interactive.button_reply.id;
+      request = {
+        type: buttonId.startsWith('path-') ? 'path' : 'intent',
+        payload: buttonId.startsWith('path-')
+          ? { path: buttonId.replace('path-', '') }
+          : { query: buttonId, intent: { name: buttonId }, entities: [] }
+      };
     }
     
-    let response = await axios({
-      method: 'POST',
-      url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(user_id)}/interact`,
-      headers: {
-        Authorization: VF_API_KEY,
-        'Content-Type': 'application/json',
-        versionID: VF_VERSION_ID,
-      },
-      data: {
-        action: request,
-        config: {
-          sessionID: request.payload?.toLowerCase() === "סיים שיחה" ? `${user_id}-${Date.now()}` : user_id,
-          restart: request.payload?.toLowerCase() === "סיים שיחה"
-        }
-      },
-    })
-    console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
-
-    if (!response.data || response.data.length === 0) {
-      console.error("❌ No response received from Voiceflow");
-      return;
-    }
-
-    await sendMessage(response.data, phone_number_id, user_id);
+    if (request) await interact(userId, request, phoneNumberId, userName);
+    res.sendStatus(200);
   } catch (error) {
-    console.error("❌ Error in interact function:", error);
+    console.error('❌ Error processing webhook:', error);
+    res.sendStatus(500);
+  }
+});
+
+// שליחת הודעה ל-Voiceflow
+async function interact(userId, request, phoneNumberId, userName) {
+  try {
+    console.log(`🔄 Sending interaction to Voiceflow for ${userName} (${userId})`);
+    const response = await axios.post(
+      `https://general-runtime.voiceflow.com/state/user/${encodeURIComponent(userId)}/interact`,
+      { action: request, config: { sessionID: userId } },
+      { headers: { Authorization: VF_API_KEY, 'Content-Type': 'application/json', versionID: VF_VERSION_ID } }
+    );
+
+    if (response.data?.length) await sendMessage(response.data, phoneNumberId, userId);
+  } catch (error) {
+    console.error('❌ Error in interact function:', error.response?.data || error.message);
   }
 }
 
-async function sendMessage(messages, phone_number_id, from) {
+// שליחת הודעה חזרה ל-WhatsApp
+async function sendMessage(messages, phoneNumberId, userId) {
   for (let message of messages) {
-    let data = {
+    const data = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: from,
+      to: userId,
       type: 'text',
-      text: {
-        preview_url: true,
-        body: message.payload?.message || 'הודעה ריקה',
-      },
-    }
+      text: { preview_url: true, body: message.payload?.message || 'הודעה ריקה' }
+    };
     try {
-      await axios.post(`https://graph.facebook.com/${WHATSAPP_VERSION}/${phone_number_id}/messages`, data, {
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-      });
+      await axios.post(
+        `https://graph.facebook.com/${WHATSAPP_VERSION}/${phoneNumberId}/messages`,
+        data,
+        { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
     } catch (error) {
-      console.error("❌ Error sending message:", error.response?.data || error.message);
+      console.error('❌ Error sending message:', error.response?.data || error.message);
     }
   }
 }
