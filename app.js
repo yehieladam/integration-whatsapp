@@ -131,11 +131,32 @@ async function sendMessage(messages, phone_number_id, from) {
             body: messages[j].payload.message,
           },
         };
+      } else if (messages[j].type === 'buttons' && messages[j].payload?.buttons) {
+        data = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: from,
+          type: 'interactive',
+          interactive: {
+            type: 'button',
+            body: {
+              text: messages[j].payload.message || "בחר אופציה:",
+            },
+            action: {
+              buttons: messages[j].payload.buttons.map(button => ({
+                type: 'reply',
+                reply: {
+                  id: button.id,
+                  title: button.title || "אפשרות",
+                },
+              }))
+            }
+          }
+        };
       } else {
         ignore = true;
         console.error("❌ Unsupported message type or missing payload:", messages[j]);
       }
-
       if (!ignore) {
         console.log("📩 Sending WhatsApp message to:", from);
         console.log("📩 Message Data:", JSON.stringify(data, null, 2));
