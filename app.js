@@ -79,4 +79,50 @@ async function interact(user_id, request, phone_number_id, user_name) {
     },
   })
   console.log("📌 Response from Voiceflow:", response.data);
+
+  if (response.data.length > 0) {
+    await sendMessage(response.data, phone_number_id, user_id);
+  }
+}
+
+async function sendMessage(messages, phone_number_id, from) {
+  for (let j = 0; j < messages.length; j++) {
+    let data;
+    let ignore = null;
+    
+    if (messages[j].type == 'text') {
+      data = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: from,
+        type: 'text',
+        text: {
+          preview_url: true,
+          body: messages[j].payload.message,
+        },
+      };
+    } else {
+      ignore = true;
+    }
+
+    if (!ignore) {
+      console.log("📩 Sending WhatsApp message to:", from);
+      console.log("📩 Message Data:", JSON.stringify(data, null, 2));
+
+      try {
+        let response = await axios({
+          method: 'POST',
+          url: `https://graph.facebook.com/${WHATSAPP_VERSION}/${phone_number_id}/messages`,
+          data: data,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + WHATSAPP_TOKEN,
+          },
+        });
+        console.log("✅ WhatsApp API Response:", response.data);
+      } catch (err) {
+        console.error("❌ Error sending WhatsApp message:", err.response?.data || err);
+      }
+    }
+  }
 }
