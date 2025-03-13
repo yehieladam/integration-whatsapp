@@ -51,17 +51,17 @@ app.post('/webhook', async (req, res) => {
         let buttonPayload = null;
         
         if (interactive.type === 'button_reply') {
-          buttonPayload = interactive.button_reply.id; // שליחה כ-ID
+          buttonPayload = interactive.button_reply.id; // שינוי ל-ID במקום טקסט
         } else if (interactive.type === 'list_reply') {
           buttonPayload = interactive.list_reply.id;
         }
 
         if (buttonPayload) {
           console.log("📌 Button Clicked:", buttonPayload);
-          // שליחת לחיצת הכפתור כהודעת טקסט רגילה
+          // שליחת לחיצת הכפתור כהודעת טקסט עם סימון מיוחד לזיהוי ב-Voiceflow
           await interact(user_id, {
             type: 'text',
-            payload: buttonPayload,
+            payload: `button:${buttonPayload}`,
           }, phone_number_id, user_name);
         }
       }
