@@ -131,7 +131,7 @@ async function sendMessage(messages, phone_number_id, from) {
             body: messages[j].payload.message,
           },
         };
-      } else if (messages[j].type === 'buttons' && messages[j].payload?.buttons) {
+      } else if (messages[j].type === 'choice' && messages[j].payload?.buttons) {
         data = {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -146,8 +146,8 @@ async function sendMessage(messages, phone_number_id, from) {
               buttons: messages[j].payload.buttons.map(button => ({
                 type: 'reply',
                 reply: {
-                  id: button.id,
-                  title: button.title || "אפשרות",
+                  id: button.request.type,
+                  title: button.request.payload.label || "אפשרות",
                 },
               }))
             }
