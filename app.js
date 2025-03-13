@@ -2,7 +2,6 @@
 require('dotenv').config()
 const WHATSAPP_VERSION = process.env.WHATSAPP_VERSION || 'v17.0'
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'voiceflow'
 
 const VF_API_KEY = process.env.VF_API_KEY
 const VF_VERSION_ID = process.env.VF_VERSION_ID || 'development'
@@ -14,277 +13,91 @@ const express = require('express'),
   axios = require('axios').default,
   app = express().use(body_parser.json())
 
-// הגדרת timeout לכל בקשות axios
-axios.defaults.timeout = 15000;
+app.listen(process.env.PORT || 3000, () => console.log('webhook is listening'))
 
-// מעקב אחר בקשות פעילות
-let activeRequests = 0;
-const MAX_CONCURRENT_REQUESTS = 10;
-const requestQueue = [];
-
-// בדיקת משתני סביבה חיוניים
-function checkRequiredEnvVars() {
-  const required = ['WHATSAPP_TOKEN', 'VF_API_KEY'];
-  const missing = required.filter(varName => !process.env[varName]);
-  
-  if (missing.length > 0) {
-    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-    console.error('Please set these variables in your .env file or environment');
-    process.exit(1);
-  }
-}
-
-// הפעלת השרת
-app.listen(process.env.PORT || 3000, () => {
-  console.log('WhatsApp-Voiceflow webhook is listening on port', process.env.PORT || 3000);
-  checkRequiredEnvVars();
-});
-
-// נתיב הבית - בדיקת בריאות
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    info: 'WhatsApp API v1.2.0 | V⦿iceflow | 2023',
+    info: 'WhatsApp API v1.1.2 | V⦿iceflow | 2023',
     status: 'healthy',
     error: null,
   })
 })
 
-// נתיב webhook לקבלת הודעות
 app.post('/webhook', async (req, res) => {
-  // החזרת תשובה מיידית למניעת timeout
-  res.status(200).json({ message: 'ok' });
-  
-  try {
-    let body = req.body;
-    
-    if (!body.object) {
-      console.error('❌ Invalid webhook request: missing object property');
-      return;
-    }
-    
-    const changes = body?.entry?.[0]?.changes?.[0];
-    const value = changes?.value;
-    const isNotInteractive = value?.messages?.length || null;
-    
-    if (!isNotInteractive) {
-      console.log('📌 Ignoring non-message webhook event');
-      return;
-    }
-    
-    const phone_number_id = value?.metadata?.phone_number_id;
-    const message = value?.messages?.[0];
-    const user_id = message?.from;
-    const user_name = value?.contacts?.[0]?.profile?.name || 'Unknown';
-    
-    if (!phone_number_id || !user_id || !message) {
-      console.error('❌ Missing required message properties');
-      return;
-    }
-    
-    console.log("📌 User ID (Phone Number):", user_id);
-    console.log("📌 User Name:", user_name);
-    
-    if (message.text) {
-      // הוספה לתור הבקשות
-      addToRequestQueue({
-        type: 'text',
-        payload: message.text.body,
-        user_id,
-        phone_number_id,
-        user_name
-      });
-    } else if (message.image || message.audio || message.video) {
-      // טיפול בסוגי הודעות נוספים
-      const mediaType = message.image ? 'image' : message.audio ? 'audio' : 'video';
-      console.log(`📌 Received ${mediaType} message, sending text-only response`);
+  let body = req.body
+  if (req.body.object) {
+    const isNotInteractive = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.length || null
+    if (isNotInteractive) {
+      let phone_number_id = req.body.entry[0].changes[0].value.metadata.phone_number_id
+      let user_id = req.body.entry[0].changes[0].value.messages[0].from 
+      let user_name = req.body.entry[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || 'Unknown'
       
-      addToRequestQueue({
-        type: 'media',
-        payload: `Received ${mediaType}`,
-        user_id,
-        phone_number_id,
-        user_name
-      });
+      console.log("📌 User ID (Phone Number):", user_id);
+      console.log("📌 User Name:", user_name);
+      
+      if (req.body.entry[0].changes[0].value.messages[0].text) {
+        await interact(user_id, {
+          type: 'text',
+          payload: req.body.entry[0].changes[0].value.messages[0].text.body,
+        }, phone_number_id, user_name)
+      }
     }
-    
-  } catch (error) {
-    console.error('❌ Error processing webhook:', error);
+    res.status(200).json({ message: 'ok' })
+  } else {
+    res.status(400).json({ message: 'error | unexpected body' })
   }
 })
 
-// נתיב אימות webhook
 app.get('/webhook', (req, res) => {
   let mode = req.query['hub.mode']
   let token = req.query['hub.verify_token']
   let challenge = req.query['hub.challenge']
 
   if (mode && token) {
-    if ((mode === 'subscribe' && token === VERIFY_TOKEN)) {
+    if ((mode === 'subscribe' && token === process.env.VERIFY_TOKEN) || 'voiceflow') {
       console.log('WEBHOOK_VERIFIED')
       res.status(200).send(challenge)
     } else {
-      console.error('❌ Failed webhook verification');
       res.sendStatus(403)
     }
-  } else {
-    console.error('❌ Invalid verification request');
-    res.sendStatus(400)
   }
 })
 
-// ניהול תור בקשות
-function addToRequestQueue(requestData) {
-  requestQueue.push(requestData);
-  processQueue();
-}
-
-async function processQueue() {
-  if (requestQueue.length === 0 || activeRequests >= MAX_CONCURRENT_REQUESTS) {
-    return;
-  }
-  
-  const { type, payload, user_id, phone_number_id, user_name } = requestQueue.shift();
-  activeRequests++;
-  
-  try {
-    if (type === 'text') {
-      await interact(user_id, { type: 'text', payload }, phone_number_id, user_name);
-    } else if (type === 'media') {
-      // שליחת תשובה להודעות מדיה
-      const mediaResponse = [{
-        type: 'text',
-        payload: {
-          message: "קיבלתי את המדיה ששלחת. אני יכול לענות רק על הודעות טקסט כרגע."
-        }
-      }];
-      await sendMessage(mediaResponse, phone_number_id, user_id);
-    }
-  } catch (error) {
-    console.error('❌ Error processing queued request:', error);
-  } finally {
-    activeRequests--;
-    // המשך עיבוד התור
-    setTimeout(processQueue, 100);
-  }
-}
-
-// פונקציית אינטראקציה עם Voiceflow
 async function interact(user_id, request, phone_number_id, user_name) {
   try {
-    console.log("🔄 Sending interaction to Voiceflow", user_name, user_id);
-    
-    // וידוא שה-user_id בטוח לשימוש בכתובת URL
-    const safeUserId = encodeURIComponent(user_id);
-    
-    let retries = 3;
-    let delay = 1000;
-    let response;
-    
-    while (retries > 0) {
-      try {
-        response = await axios({
-          method: 'POST',
-          url: `https://general-runtime.voiceflow.com/state/user/${safeUserId}/interact`,
-          headers: {
-            Authorization: VF_API_KEY,
-            'Content-Type': 'application/json',
-            versionID: VF_VERSION_ID,
-            ...(VF_PROJECT_ID ? { projectID: VF_PROJECT_ID } : {})
-          },
-          data: {
-            action: request,
-            config: {
-              tts: false,
-              stripSSML: true,
-              stopAll: true,
-              excludeTypes: ['block', 'debug', 'flow', 'paths']
-            }
-          },
-          timeout: 15000 // 15 שניות timeout
-        });
-        
-        // בדיקת תקינות התשובה
-        if (!response.data) {
-          throw new Error("Empty response from Voiceflow");
-        }
-        
-        break; // יציאה מהלולאה אם הבקשה הצליחה
-        
-      } catch (err) {
-        retries--;
-        if (retries === 0) {
-          console.error("❌ Failed to interact with Voiceflow after multiple attempts:", err.response?.data || err.message);
-          
-          // שליחת הודעת שגיאה למשתמש
-          const errorMessage = [{
-            type: 'text',
-            payload: {
-              message: "מצטער, אני נתקל בבעיה טכנית כרגע. אנא נסה שוב מאוחר יותר."
-            }
-          }];
-          
-          await sendMessage(errorMessage, phone_number_id, user_id);
-          return;
-        } else {
-          console.warn(`⚠️ Error interacting with Voiceflow. Retrying in ${delay/1000} seconds...`, err.response?.data || err.message);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          delay *= 2;
-        }
-      }
-    }
-    
-    // בדיקה שיש תשובה עם תוכן תקין
-    if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
-      console.warn("⚠️ Invalid or empty response structure from Voiceflow");
-      const fallbackMessage = [{
-        type: 'text',
-        payload: {
-          message: "אני לא מצליח לעבד את הבקשה כרגע. אנא נסה שוב או נסח את הבקשה בצורה אחרת."
-        }
-      }];
-      
-      await sendMessage(fallbackMessage, phone_number_id, user_id);
+    console.log("🔄 Sending interaction to Voiceflow", user_name, user_id)
+    let response = await axios({
+      method: 'POST',
+      url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(user_id)}/interact`,
+      headers: {
+        Authorization: VF_API_KEY,
+        'Content-Type': 'application/json',
+        versionID: VF_VERSION_ID,
+      },
+      data: {
+        action: request,
+      },
+    })
+    console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
+
+    if (!response.data || response.data.length === 0) {
+      console.error("❌ No response received from Voiceflow");
       return;
     }
-    
-    console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
-    
-    // שליחת ההודעות למשתמש
+
     await sendMessage(response.data, phone_number_id, user_id);
-    
   } catch (error) {
-    console.error("❌ General error in interact function:", error);
-    
-    // שליחת הודעת שגיאה כללית למשתמש
-    try {
-      const systemErrorMessage = [{
-        type: 'text',
-        payload: {
-          message: "אירעה שגיאה בעיבוד הבקשה שלך. צוות התמיכה שלנו עובד על זה."
-        }
-      }];
-      
-      await sendMessage(systemErrorMessage, phone_number_id, user_id);
-    } catch (sendError) {
-      console.error("❌ Failed to send error message to user:", sendError);
-    }
+    console.error("❌ Error in interact function:", error);
   }
 }
 
-// פונקציית שליחת הודעות ל-WhatsApp
 async function sendMessage(messages, phone_number_id, from) {
   try {
-    if (!Array.isArray(messages)) {
-      console.error("❌ Invalid messages format, expected array:", messages);
-      return;
-    }
-    
     for (let j = 0; j < messages.length; j++) {
       let data;
-      let ignore = false;
+      let ignore = null;
       
-      // טיפול בסוגי הודעות שונים
       if (messages[j].type === 'text' && messages[j].payload?.message) {
         data = {
           messaging_product: 'whatsapp',
@@ -296,69 +109,38 @@ async function sendMessage(messages, phone_number_id, from) {
             body: messages[j].payload.message,
           },
         };
-      } else if (messages[j].type === 'image' && messages[j].payload?.url) {
-        data = {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: from,
-          type: 'image',
-          image: {
-            link: messages[j].payload.url
-          }
-        };
-      } else if (messages[j].type === 'choice' && Array.isArray(messages[j].payload?.buttons)) {
-        // המרת אפשרויות בחירה לטקסט רגיל
-        const buttonOptions = messages[j].payload.buttons
-          .map((btn, index) => `${index + 1}. ${btn.name}`)
-          .join('\n');
-          
-        data = {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: from,
-          type: 'text',
-          text: {
-            preview_url: false,
-            body: `${messages[j].payload.message || 'בחר אפשרות:'}\n\n${buttonOptions}`
-          }
-        };
+      } else if (messages[j].type === 'path') {
+        console.log("🔀 Path detected, skipping message sending:", messages[j].payload.path);
+        continue;
+      } else if (messages[j].type === 'end') {
+        console.log("✅ Conversation ended. No message sent.");
+        continue;
       } else {
         ignore = true;
-        console.warn("⚠️ Unsupported message type or missing payload:", messages[j].type);
+        console.error("❌ Unsupported message type or missing payload:", messages[j]);
       }
 
       if (!ignore) {
         console.log("📩 Sending WhatsApp message to:", from);
-        
-        // מנגנון ניסיון חוזר עם השהייה גדלה
-        let retries = 3;
-        let delay = 1000; // התחלה עם השהייה של שנייה
-        
-        while (retries > 0) {
-          try {
-            const response = await axios({
-              method: 'POST',
-              url: `https://graph.facebook.com/${WHATSAPP_VERSION}/${phone_number_id}/messages`,
-              data: data,
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: 'Bearer ' + WHATSAPP_TOKEN,
-              },
-              timeout: 10000 // 10 שניות timeout
-            });
-            
-            console.log("✅ WhatsApp API Response:", 
-              response.data?.messages?.[0]?.id ? 
-              `Message ID: ${response.data.messages[0].id}` : 
-              JSON.stringify(response.data)
-            );
-            break; // יציאה מהלולאה אם ההודעה נשלחה בהצלחה
-            
-          } catch (err) {
-            retries--;
-            if (retries === 0) {
-              console.error("❌ Failed to send WhatsApp message after multiple attempts:", err.response?.data || err.message);
-            } else {
-              console.warn(`⚠️ Error sending message. Retrying in ${delay/1000} seconds...`, err.response?.data || err.message);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              delay *= 2; // הכפלת זמן ההמ
+        console.log("📩 Message Data:", JSON.stringify(data, null, 2));
+
+        try {
+          let response = await axios({
+            method: 'POST',
+            url: `https://graph.facebook.com/${WHATSAPP_VERSION}/${phone_number_id}/messages`,
+            data: data,
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: 'Bearer ' + WHATSAPP_TOKEN,
+            },
+          });
+          console.log("✅ WhatsApp API Response:", response.data);
+        } catch (err) {
+          console.error("❌ Error sending WhatsApp message:", err.response?.data || err);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error in sendMessage function:", error);
+  }
+}
