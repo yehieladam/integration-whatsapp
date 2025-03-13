@@ -77,6 +77,10 @@ async function interact(user_id, request, phone_number_id, user_name) {
       },
       data: {
         action: request,
+        config: {
+          sessionID: user_id,
+          restart: true
+        }
       },
     })
     console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
@@ -109,12 +113,36 @@ async function sendMessage(messages, phone_number_id, from) {
             body: messages[j].payload.message,
           },
         };
-      } else if (messages[j].type === 'path') {
-        console.log("🔀 Path detected, skipping message sending:", messages[j].payload.path);
-        continue;
-      } else if (messages[j].type === 'end') {
-        console.log("✅ Conversation ended. No message sent.");
-        continue;
+      } else if (messages[j].type === 'choice') {
+        let buttons = messages[j].payload.buttons.map(btn => ({
+          type: "reply",
+          reply: {
+            id: btn.name,
+            title: btn.label
+          }
+        }));
+
+        data = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: from,
+          type: "interactive",
+          interactive: {
+            type: "button",
+            body: { text: messages[j - 1]?.payload.message || "בחר אופציה:" },
+            action: { buttons: buttons }
+          }
+        };
+      } else if (messages[j].type === 'image') {
+        data = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: from,
+          type: 'image',
+          image: {
+            link: messages[j].payload.url,
+          },
+        };
       } else {
         ignore = true;
         console.error("❌ Unsupported message type or missing payload:", messages[j]);
