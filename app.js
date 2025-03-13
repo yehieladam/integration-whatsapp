@@ -41,6 +41,20 @@ app.post('/webhook', async (req, res) => {
           type: 'text',
           payload: req.body.entry[0].changes[0].value.messages[0].text.body,
         }, phone_number_id, user_name)
+      } else if (req.body.entry[0].changes[0].value.messages[0].interactive) {
+        let button_id = req.body.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
+        let button_text = req.body.entry[0].changes[0].value.messages[0].interactive.button_reply.title;
+
+        console.log(`🔄 Sending button interaction to Voiceflow: ${button_text}`);
+
+        await interact(user_id, {
+          type: 'intent',
+          payload: {
+            query: button_text,
+            intent: { name: button_id },
+            entities: [],
+          },
+        }, phone_number_id, user_name);
       }
     }
     res.status(200).json({ message: 'ok' })
@@ -111,73 +125,5 @@ async function interact(user_id, request, phone_number_id, user_name) {
     await sendMessage(response.data, phone_number_id, user_id);
   } catch (error) {
     console.error("❌ Error in interact function:", error);
-  }
-}
-
-async function sendMessage(messages, phone_number_id, from) {
-  try {
-    for (let j = 0; j < messages.length; j++) {
-      let data;
-      let ignore = null;
-      
-      if (messages[j].type === 'text' && messages[j].payload?.message) {
-        data = {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: from,
-          type: 'text',
-          text: {
-            preview_url: true,
-            body: messages[j].payload.message,
-          },
-        };
-      } else if (messages[j].type === 'choice' && messages[j].payload?.buttons) {
-        data = {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: from,
-          type: 'interactive',
-          interactive: {
-            type: 'button',
-            body: {
-              text: messages[j].payload.message || "בחר אופציה:",
-            },
-            action: {
-              buttons: messages[j].payload.buttons.map(button => ({
-                type: 'reply',
-                reply: {
-                  id: button.request.type,
-                  title: button.request.payload.label || "אפשרות",
-                },
-              }))
-            }
-          }
-        };
-      } else {
-        ignore = true;
-        console.error("❌ Unsupported message type or missing payload:", messages[j]);
-      }
-      if (!ignore) {
-        console.log("📩 Sending WhatsApp message to:", from);
-        console.log("📩 Message Data:", JSON.stringify(data, null, 2));
-
-        try {
-          let response = await axios({
-            method: 'POST',
-            url: `https://graph.facebook.com/${WHATSAPP_VERSION}/${phone_number_id}/messages`,
-            data: data,
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: 'Bearer ' + WHATSAPP_TOKEN,
-            },
-          });
-          console.log("✅ WhatsApp API Response:", response.data);
-        } catch (err) {
-          console.error("❌ Error sending WhatsApp message:", err.response?.data || err);
-        }
-      }
-    }
-  } catch (error) {
-    console.error("❌ Error in sendMessage function:", error);
   }
 }
