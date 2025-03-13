@@ -79,7 +79,7 @@ async function interact(user_id, request, phone_number_id, user_name) {
         action: request,
       },
     })
-    console.log("📌 Response from Voiceflow:", response.data);
+    console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
 
     if (!response.data || response.data.length === 0) {
       console.error("❌ No response received from Voiceflow");
@@ -98,7 +98,7 @@ async function sendMessage(messages, phone_number_id, from) {
       let data;
       let ignore = null;
       
-      if (messages[j].type == 'text') {
+      if (messages[j].type === 'text' && messages[j].payload?.message) {
         data = {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -111,6 +111,7 @@ async function sendMessage(messages, phone_number_id, from) {
         };
       } else {
         ignore = true;
+        console.error("❌ Unsupported message type or missing payload:", messages[j]);
       }
 
       if (!ignore) {
