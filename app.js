@@ -81,7 +81,10 @@ app.post('/webhook', async (req, res) => {
     
     if (request) {
       console.log("🔄 Sending request to Voiceflow:", request);
-      await interact(userId, request, phoneNumberId, userName);
+      const response = await interact(userId, request, phoneNumberId, userName);
+      if (response) {
+        await sendMessage(response, phoneNumberId, userId);
+      }
     } else {
       console.log("⚠️ No valid request generated from message");
     }
@@ -102,7 +105,33 @@ async function interact(userId, request, phoneNumberId, userName) {
       { headers: { Authorization: VF_API_KEY, 'Content-Type': 'application/json', versionID: VF_VERSION_ID, projectID: VF_PROJECT_ID } }
     );
     console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
+    return response.data;
   } catch (error) {
     console.error('❌ Error in interact function:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+// פונקציה לשליחת הודעה ל-WhatsApp
+async function sendMessage(messages, phoneNumberId, userId) {
+  for (let message of messages) {
+    console.log("📤 Sending message to WhatsApp:", message);
+    let textMessage = message.payload?.message || '⚠️ הודעה ריקה מהבוט';
+    const data = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: userId,
+      type: 'text',
+      text: { preview_url: true, body: textMessage }
+    };
+    try {
+      await axios.post(
+        `https://graph.facebook.com/${WHATSAPP_VERSION}/${phoneNumberId}/messages`,
+        data,
+        { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
+    } catch (error) {
+      console.error('❌ Error sending message:', error.response?.data || error.message);
+    }
   }
 }
