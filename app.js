@@ -118,7 +118,7 @@ async function sendMessage(messages, phone_number_id, from) {
           type: "reply",
           reply: {
             id: btn.name,
-            title: btn.label
+            title: btn.payload.label || btn.name 
           }
         }));
 
@@ -136,39 +136,4 @@ async function sendMessage(messages, phone_number_id, from) {
       } else if (messages[j].type === 'image') {
         data = {
           messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: from,
-          type: 'image',
-          image: {
-            link: messages[j].payload.url,
-          },
-        };
-      } else {
-        ignore = true;
-        console.error("❌ Unsupported message type or missing payload:", messages[j]);
-      }
-
-      if (!ignore) {
-        console.log("📩 Sending WhatsApp message to:", from);
-        console.log("📩 Message Data:", JSON.stringify(data, null, 2));
-
-        try {
-          let response = await axios({
-            method: 'POST',
-            url: `https://graph.facebook.com/${WHATSAPP_VERSION}/${phone_number_id}/messages`,
-            data: data,
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: 'Bearer ' + WHATSAPP_TOKEN,
-            },
-          });
-          console.log("✅ WhatsApp API Response:", response.data);
-        } catch (err) {
-          console.error("❌ Error sending WhatsApp message:", err.response?.data || err);
-        }
-      }
-    }
-  } catch (error) {
-    console.error("❌ Error in sendMessage function:", error);
-  }
-}
+          recipient_type: '
