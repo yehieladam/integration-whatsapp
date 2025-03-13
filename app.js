@@ -132,6 +132,7 @@
            },
          };
        } else if (messages[j].type === 'buttons' && messages[j].payload?.buttons) {
+       } else if (messages[j].type === 'choice' && messages[j].payload?.buttons) {
          data = {
            messaging_product: 'whatsapp',
            recipient_type: 'individual',
@@ -148,6 +149,8 @@
                  reply: {
                    id: button.id,
                    title: button.title || "אפשרות",
+                   id: button.request.type,
+                   title: button.request.payload.label || "אפשרות",
                  },
                }))
              }
@@ -157,7 +160,6 @@
          ignore = true;
          console.error("❌ Unsupported message type or missing payload:", messages[j]);
        }
- 
        if (!ignore) {
          console.log("📩 Sending WhatsApp message to:", from);
          console.log("📩 Message Data:", JSON.stringify(data, null, 2));
