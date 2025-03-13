@@ -80,23 +80,6 @@ async function interact(user_id, request, phone_number_id, user_name) {
   try {
     console.log("🔄 Sending interaction to Voiceflow", user_name, user_id)
     
-    if (request.payload?.toLowerCase() === "סיים שיחה") {
-      console.log("🔄 Resetting session for", user_id);
-      await axios({
-        method: 'PATCH',
-        url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(user_id)}/variables`,
-        headers: {
-          Authorization: VF_API_KEY,
-          'Content-Type': 'application/json',
-        },
-        data: {
-          user_id: user_id,
-          restart: true,
-          sessionID: `${user_id}-${Date.now()}`
-        },
-      });
-    }
-    
     let response = await axios({
       method: 'POST',
       url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(user_id)}/interact`,
@@ -107,10 +90,6 @@ async function interact(user_id, request, phone_number_id, user_name) {
       },
       data: {
         action: request,
-        config: {
-          sessionID: request.payload?.toLowerCase() === "סיים שיחה" ? `${user_id}-${Date.now()}` : user_id,
-          restart: request.payload?.toLowerCase() === "סיים שיחה"
-        }
       },
     })
     console.log("📌 Response from Voiceflow:", JSON.stringify(response.data, null, 2));
