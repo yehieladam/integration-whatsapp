@@ -300,6 +300,44 @@ async function interact(user_id, request, phone_number_id, user_name) {
     let messages = []
     for (let i = 0; i < messagesFromVF.length; i++) {
       const msg = messagesFromVF[i]
+      // === טיפול ב-Card (visual + text + choice עם לינק) ===
+if (msg.type === 'visual' && msg.payload?.image) {
+  messages.push({
+    type: 'image',
+    value: msg.payload.image,
+  })
+
+  const nextText = messagesFromVF[i + 1]
+  if (nextText?.type === 'text') {
+    const description = extractSlateText(nextText.payload)
+    messages.push({
+      type: 'text',
+      value: description,
+    })
+    i++
+  }
+
+  const nextChoice = messagesFromVF[i + 1]
+  if (
+    nextChoice?.type === 'choice' &&
+    nextChoice.payload?.buttons?.length > 0
+  ) {
+    const button = nextChoice.payload.buttons[0]
+    const action = button.request?.payload?.actions?.[0]
+    const label = button.request?.payload?.label || 'פתח קישור'
+
+    if (action?.payload?.url) {
+      messages.push({
+        type: 'text',
+        value: `${label}: ${action.payload.url}`,
+      })
+      i++
+    }
+  }
+
+  continue // דילגנו על כל שאר הטיפול כי כבר שלחנו הכול
+}
+
 
       // 1) טקסט (Text) – מגיע כ־payload.slate או payload.message
       if (msg.type === 'text') {
