@@ -364,10 +364,15 @@ async function interact(user_id, request, phone_number_id, user_name) {
           }
 
           // אם יש לינק – נתעלם (או נטפל אחרת)
-          if (link) {
-            // לדוגמה: אפשר להוסיף הודעת "לינק" כאן
-            continue
-          } else if (button.request.type.includes('path-')) {
+       if (link) {
+  messages.push({
+    type: 'text',
+    value: `${button.request.payload.label}: ${link}`,
+  })
+  continue
+}
+     
+          else if (button.request.type.includes('path-')) {
             // כפתור path
             buttons.push({
               type: 'reply',
